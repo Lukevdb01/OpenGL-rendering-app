@@ -1,4 +1,4 @@
-OpenGL Rendering App
+## OpenGL Rendering App
 
 This project was originally developed in December 2022 as part of a school assignment. I had the freedom to choose my own subject, and since 3D rendering had always been on my learning list, I proposed the idea to my teacher—who encouraged me to pursue it.
 
