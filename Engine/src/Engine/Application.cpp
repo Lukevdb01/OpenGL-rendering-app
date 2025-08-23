@@ -4,114 +4,250 @@
 #include <string>
 #include "Model/Model.h"
 
-GLFWwindow* window;
+#define IMGUI_IMPL_OPENGL_LOADER_GLAD
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
+
+GLFWwindow* window = nullptr;
 
 Application::Application()
 {
-	// Initialize GLFW
-	glfwInit();
+    // -----------------------------
+    // GLFW Initialization
+    // -----------------------------
+    if (!glfwInit())
+    {
+        std::cerr << "[Error] Failed to initialize GLFW" << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
 
-	// Tell GLFW what version of OpenGL we are using 
-	// In this case we are using OpenGL 4.6
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-	// So that means we only have the modern functions
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	// Create a GLFWwindow object.
-	window = glfwCreateWindow(600, 600, "Mijn mooie 3D engine :)", NULL, NULL);
-	// Error check if the window fails to create
-	if (window == NULL)
-	{
-		std::cout << "Failed to create GLFW window" << std::endl;
-		glfwTerminate();
-	}
-	// Introduce the window into the current context
-	glfwMakeContextCurrent(window);
+    window = glfwCreateWindow(1280, 720, "Docking OpenGL Engine", nullptr, nullptr);
+    if (!window)
+    {
+        std::cerr << "[Error] Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        std::exit(EXIT_FAILURE);
+    }
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1); // VSync
 
-	//Load GLAD so it configures OpenGL
-	gladLoadGL();
-	// Specify the viewport of OpenGL in the Window
-	glViewport(0, 0, 600, 600);
+    // -----------------------------
+    // Load OpenGL functions
+    // -----------------------------
+    if (!gladLoadGL())
+    {
+        std::cerr << "[Error] Failed to initialize GLAD" << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
+    glEnable(GL_DEPTH_TEST);
+
+    // -----------------------------
+    // ImGui Initialization
+    // -----------------------------
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
+    ImGui::StyleColorsDark();
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 460");
 }
 
 Application::~Application()
 {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    if (window)
+    {
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        window = nullptr;
+    }
 }
 
 void Application::Run()
 {
-	// Generates Shader object using shaders default.vert and default.frag
-	Shader shaderProgram("default.vert", "default.frag");
+    Shader shaderProgram("default.vert", "default.frag");
+    shaderProgram.Activate();
+    glUniform4f(glGetUniformLocation(shaderProgram.ID, "lightColor"), 1.0f, 1.0f, 1.0f, 1.0f);
+    glUniform3f(glGetUniformLocation(shaderProgram.ID, "lightPos"), 0.5f, 0.5f, 0.5f);
 
-	// Take care of all the light related things
-	glm::vec4 lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	glm::vec3 lightPos = glm::vec3(0.5f, 0.5f, 0.5f);
-	glm::mat4 lightModel = glm::mat4(1.0f);
-	lightModel = glm::translate(lightModel, lightPos);
+    Camera camera(1280, 720, glm::vec3(0.0f, 6.0f, 8.0f));
+    Model ground("models/character/character.gltf");
+    Model rick("models/rick/rick.gltf");
 
-	shaderProgram.Activate();
-	glUniform4f(glGetUniformLocation(shaderProgram.ID, "lightColor"), lightColor.x, lightColor.y, lightColor.z, lightColor.w);
-	glUniform3f(glGetUniformLocation(shaderProgram.ID, "lightPos"), lightPos.x, lightPos.y, lightPos.z);
+    double prevTime = glfwGetTime();
+    unsigned int frameCounter = 0;
 
-	// Enables the Depth Buffer and choses which depth function to use
-	glEnable(GL_DEPTH_TEST);
+    // Framebuffer setup for Scene
+    GLuint sceneFBO, sceneTexture, sceneRBO;
+    glGenFramebuffers(1, &sceneFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
 
-	// Creates camera object
-	Camera camera(600, 600, glm::vec3(0.0f, 6.0f, 8.0f));
+    glGenTextures(1, &sceneTexture);
+    glBindTexture(GL_TEXTURE_2D, sceneTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1280, 720, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneTexture, 0);
 
-	// Load in models
-	Model ground("models/character/character.gltf");
-	Model rick("models/rick/rick.gltf");
-	//Model crate("models/crate/Crate.gltf");
+    glGenRenderbuffers(1, &sceneRBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 1280, 720);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, sceneRBO);
 
-	double prevTime = 0.0;
-	double crntTime = 0.0;
-	double timeDiff;
-	unsigned int counter = 0;
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "[Error] Scene framebuffer is not complete!" << std::endl;
 
-	// Main while loop
-	while (!glfwWindowShouldClose(window))
-	{
-		crntTime = glfwGetTime();
-		timeDiff = crntTime - prevTime;
-		counter++;
-		if (timeDiff >= 1.0 / 30.0)
-		{
-			std::string FPS = std::to_string((1.0 / timeDiff) * counter);
-			std::string MS = std::to_string((timeDiff / counter) * 1000);
-			std::string newTitle = "OpenGL engine - " + FPS + "FPS / " + MS + "ms";
-			glfwSetWindowTitle(window, newTitle.c_str());
-			prevTime = crntTime;
-			counter = 0;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-			// Handles camera inputs
-			camera.Inputs(window);
-		}
+    int fbWidth = 1280, fbHeight = 720; // framebuffer dimensions
 
-		// Specify the color of the background
-		glClearColor(0.07, 0.13f, 0.17f, 1.0f);
-		// Clean the back buffer and depth buffer
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // Main Loop
+    while (!glfwWindowShouldClose(window))
+    {
+        double currentTime = glfwGetTime();
+        double deltaTime = currentTime - prevTime;
+        frameCounter++;
 
-		// Updates and exports the camera matrix to the Vertex Shader
-		camera.updateMatrix(45.0f, 0.1f, 100.0f);
+        if (deltaTime >= 1.0 / 30.0)
+        {
+            double fps = frameCounter / deltaTime;
+            double msPerFrame = 1000.0 * deltaTime / frameCounter;
+            std::string title = "Docking OpenGL Engine - " + std::to_string(fps) + " FPS / " + std::to_string(msPerFrame) + " ms";
+            glfwSetWindowTitle(window, title.c_str());
 
-		// Draw models
-		ground.Draw(shaderProgram, camera);
-		rick.Draw(shaderProgram, camera);
-		//crate.Draw(shaderProgram, camera);
+            prevTime = currentTime;
+            frameCounter = 0;
+        }
 
-		// Swap the back buffer with the front buffer
-		glfwSwapBuffers(window);
-		// Take care of all GLFW events
-		glfwPollEvents();
-	}
+        // -----------------------------
+        // ImGui Frame
+        // -----------------------------
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
 
-	// Delete all the objects we've created
-	shaderProgram.Delete();
-	// Delete window before ending the program
-	glfwDestroyWindow(window);
-	// Terminate GLFW before ending the program
-	glfwTerminate();
+        // DockSpace setup
+        static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::SetNextWindowViewport(viewport->ID);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+
+        ImGui::Begin("DockSpace Window", nullptr, window_flags);
+        ImGui::DockSpace(ImGui::GetID("MyDockSpace"), ImVec2(0.0f, 0.0f), dockspace_flags);
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+
+        // -----------------------------
+        // Scene window
+        // -----------------------------
+        ImGui::Begin("Scene");
+        ImVec2 sceneSize = ImGui::GetContentRegionAvail();
+
+        // Resize framebuffer if Scene window size changed
+        int newWidth = (int)sceneSize.x;
+        int newHeight = (int)sceneSize.y;
+        if (newWidth != fbWidth || newHeight != fbHeight)
+        {
+            fbWidth = newWidth;
+            fbHeight = newHeight;
+
+            // Resize color texture
+            glBindTexture(GL_TEXTURE_2D, sceneTexture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, fbWidth, fbHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+
+            // Resize depth-stencil renderbuffer
+            glBindRenderbuffer(GL_RENDERBUFFER, sceneRBO);
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, fbWidth, fbHeight);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+
+        ImGui::Image((void*)(intptr_t)sceneTexture, sceneSize, ImVec2(0, 1), ImVec2(1, 0)); // Flip UV Y
+
+        // Camera input only when mouse is in Scene window
+        ImGuiIO& io = ImGui::GetIO();
+        ImVec2 mousePos = io.MousePos;
+        ImVec2 winPos = ImGui::GetWindowPos();
+        ImVec2 winSize = ImGui::GetWindowSize();
+        bool mouseInScene = mousePos.x >= winPos.x && mousePos.x <= winPos.x + winSize.x &&
+            mousePos.y >= winPos.y && mousePos.y <= winPos.y + winSize.y;
+
+        if (mouseInScene && ImGui::IsWindowFocused())
+        {
+            camera.Inputs(window);
+        }
+
+        ImGui::End();
+
+        // -----------------------------
+        // Debug window
+        // -----------------------------
+        ImGui::Begin("Debug Window");
+        ImGui::Text("FPS: %.1f", 1.0 / deltaTime);
+        ImGui::Text("Camera Pos: (%.1f, %.1f, %.1f)", camera.Position.x, camera.Position.y, camera.Position.z);
+        ImGui::End();
+
+        // -----------------------------
+        // Render to Scene framebuffer
+        // -----------------------------
+        glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+        glViewport(0, 0, fbWidth, fbHeight);
+        glClearColor(0.07f, 0.13f, 0.17f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Update camera projection using correct aspect ratio
+        camera.updateMatrix(45.0f, 0.1f, 100.0f, (float)fbWidth / (float)fbHeight);
+
+        ground.Draw(shaderProgram, camera);
+        rick.Draw(shaderProgram, camera);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // -----------------------------
+        // Render ImGui
+        // -----------------------------
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            GLFWwindow* backup_context = glfwGetCurrentContext();
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            glfwMakeContextCurrent(backup_context);
+        }
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    shaderProgram.Delete();
+    glDeleteFramebuffers(1, &sceneFBO);
+    glDeleteTextures(1, &sceneTexture);
+    glDeleteRenderbuffers(1, &sceneRBO);
 }
