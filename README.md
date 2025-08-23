@@ -6,4 +6,9 @@ Unfortunately, the original GitHub repository (on my old account) was accidental
 
 In the future—whether near or far—I may restart development. The project already contains the foundational building blocks for creating a game entirely from scratch, without relying on traditional engines like Unreal Engine or Unity.
 
-#### © copyright 2022 - 2025 | Luke van den Broek
+#### Edit
+
+As of today i restarted development on this project, with the goal of turning it in a small game engine with python as programming language.
+The *orginal* project code can be found on the main branch -> https://github.com/Lukevdb01/OpenGL-rendering-app/tree/main
+
+##### © copyright 2022 - 2025 | Luke van den Broek
